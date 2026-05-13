@@ -1,6 +1,5 @@
 import os
 import re
-import asyncio
 from datetime import datetime, timedelta
 
 import asyncpg
@@ -88,6 +87,7 @@ def normalize_twitch(input_text: str):
 
     for pattern in patterns:
         match = re.search(pattern, input_text)
+
         if match:
             return match.group(1)
 
@@ -107,6 +107,7 @@ def format_time(seconds: int):
 def get_user_plan(member: discord.Member):
     for plan_name, data in PLAN_DATA.items():
         role = member.get_role(data["role"])
+
         if role:
             return {
                 "name": plan_name,
@@ -140,42 +141,63 @@ async def create_tables():
     """)
 
 
-@tasks.loop(minutes=1)
+@tasks.loop(seconds=30)
 async def check_free_access():
     guild = bot.get_guild(GUILD_ID)
 
     if not guild:
         return
 
-    role = guild.get_role(FREE_ROLE)
+    free_role = guild.get_role(FREE_ROLE)
 
     for member in guild.members:
         try:
-            has_status = False
+            has_required_status = False
 
             for activity in member.activities:
                 if isinstance(activity, discord.CustomActivity):
-                    if activity.name and FREE_ACCESS_STATUS.lower() in activity.name.lower():
-                        has_status = True
 
-            if member.status != discord.Status.online:
-                has_status = False
+                    status_text = ""
 
-            if has_status:
-                if role not in member.roles:
-                    await member.add_roles(role)
-            else:
-                if role in member.roles:
-                    premium_roles = [
-                        PREMIUM_ROLE,
-                        MEGA_ROLE,
-                        EXTREME_ROLE
-                    ]
+                    if activity.name:
+                        status_text += str(activity.name)
 
-                    has_paid_role = any(member.get_role(r) for r in premium_roles)
+                    if activity.state:
+                        status_text += f" {activity.state}"
 
-                    if not has_paid_role:
-                        await member.remove_roles(role)
+                    if FREE_ACCESS_STATUS.lower() in status_text.lower():
+                        has_required_status = True
+                        break
+
+            is_online = member.status in [
+                discord.Status.online,
+                discord.Status.idle,
+                discord.Status.dnd
+            ]
+
+            should_have_role = has_required_status and is_online
+
+            has_role = free_role in member.roles
+
+            premium_roles = [
+                PREMIUM_ROLE,
+                MEGA_ROLE,
+                EXTREME_ROLE
+            ]
+
+            has_paid_role = any(member.get_role(r) for r in premium_roles)
+
+            if should_have_role and not has_role:
+                await member.add_roles(
+                    free_role,
+                    reason="User has required status"
+                )
+
+            elif not should_have_role and has_role and not has_paid_role:
+                await member.remove_roles(
+                    free_role,
+                    reason="User removed required status"
+                )
 
         except:
             pass
@@ -202,6 +224,7 @@ class FollowModal(discord.ui.Modal, title="Twitch Follow Request"):
                 ),
                 color=EMBED_COLOR
             )
+
             return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         twitch_username = normalize_twitch(str(self.twitch_input))
@@ -214,6 +237,7 @@ class FollowModal(discord.ui.Modal, title="Twitch Follow Request"):
                 ),
                 color=EMBED_COLOR
             )
+
             return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         active_order = await bot.db.fetchrow(
@@ -229,6 +253,7 @@ class FollowModal(discord.ui.Modal, title="Twitch Follow Request"):
                 ),
                 color=EMBED_COLOR
             )
+
             return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         duplicate_order = await bot.db.fetchrow(
@@ -244,6 +269,7 @@ class FollowModal(discord.ui.Modal, title="Twitch Follow Request"):
                 ),
                 color=EMBED_COLOR
             )
+
             return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         if member.id != PING_USER_ID:
@@ -267,6 +293,7 @@ class FollowModal(discord.ui.Modal, title="Twitch Follow Request"):
                         ),
                         color=EMBED_COLOR
                     )
+
                     return await interaction.response.send_message(embed=embed, ephemeral=True)
 
             expires_at = now + timedelta(seconds=plan["cooldown"])
@@ -367,6 +394,7 @@ class FollowModal(discord.ui.Modal, title="Twitch Follow Request"):
             )
 
             await member.send(embed=dm_embed)
+
         except:
             pass
 
@@ -389,7 +417,11 @@ class StaffView(discord.ui.View):
         super().__init__(timeout=None)
         self.order_id = order_id
 
-    @discord.ui.button(label="👤 Claim", style=discord.ButtonStyle.secondary, custom_id="claim_order")
+    @discord.ui.button(
+        label="👤 Claim",
+        style=discord.ButtonStyle.secondary,
+        custom_id="claim_order"
+    )
     async def claim_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await bot.db.execute(
             "UPDATE orders SET status = 'Claimed', claimed_by = $1 WHERE order_id = $2",
@@ -413,7 +445,11 @@ class StaffView(discord.ui.View):
             ephemeral=True
         )
 
-    @discord.ui.button(label="✅ Complete", style=discord.ButtonStyle.success, custom_id="complete_order")
+    @discord.ui.button(
+        label="✅ Complete",
+        style=discord.ButtonStyle.success,
+        custom_id="complete_order"
+    )
     async def complete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await bot.db.execute(
             "UPDATE orders SET status = 'Completed', completed_at = $1 WHERE order_id = $2",
@@ -440,6 +476,7 @@ class StaffView(discord.ui.View):
                 )
 
                 await user.send(embed=embed)
+
             except:
                 pass
 
@@ -462,7 +499,11 @@ class StaffView(discord.ui.View):
             ephemeral=True
         )
 
-    @discord.ui.button(label="❌ Reject", style=discord.ButtonStyle.danger, custom_id="reject_order")
+    @discord.ui.button(
+        label="❌ Reject",
+        style=discord.ButtonStyle.danger,
+        custom_id="reject_order"
+    )
     async def reject_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await bot.db.execute(
             "UPDATE orders SET status = 'Rejected' WHERE order_id = $1",
@@ -487,6 +528,7 @@ class StaffView(discord.ui.View):
                 )
 
                 await user.send(embed=embed)
+
             except:
                 pass
 
@@ -509,7 +551,11 @@ class StaffView(discord.ui.View):
             ephemeral=True
         )
 
-    @discord.ui.button(label="🗑 Remove", style=discord.ButtonStyle.secondary, custom_id="remove_order")
+    @discord.ui.button(
+        label="🗑 Remove",
+        style=discord.ButtonStyle.secondary,
+        custom_id="remove_order"
+    )
     async def remove_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await bot.db.execute(
             "DELETE FROM orders WHERE order_id = $1",
@@ -529,7 +575,8 @@ async def on_ready():
 
     bot.add_view(FollowView())
 
-    check_free_access.start()
+    if not check_free_access.is_running():
+        check_free_access.start()
 
     synced = await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
 
@@ -583,21 +630,21 @@ async def free_access_tutorial(interaction: discord.Interaction):
             f"# {EMOJI_GIFT} Free Access Tutorial\n\n"
             f"## {EMOJI_BOOK} How To Get Free Access\n\n"
             f"> {EMOJI_ARROW} Open Discord Settings\n"
-            f"> {EMOJI_ARROW} Go to **Profiles**\n"
+            f"> {EMOJI_ARROW} Go to Profiles\n"
             f"> {EMOJI_ARROW} Set your custom status to:\n"
             f"> `Best Tools: discord.gg/dP2xzfSBPn`\n"
-            f"> {EMOJI_ARROW} Stay **Online** on Discord\n\n"
-            f"## {EMOJI_NOTIFICATION} Important Requirements\n\n"
-            f"> {EMOJI_TICK} You must stay **online**\n"
+            f"> {EMOJI_ARROW} Stay Online on Discord\n\n"
+            f"## {EMOJI_NOTIFICATION} Requirements\n\n"
             f"> {EMOJI_TICK} Status must match exactly\n"
-            f"> {EMOJI_TICK} Role is added automatically\n\n"
-            f"## {EMOJI_STAR} Free Access Perks\n\n"
-            f"> {EMOJI_GLOBAL} Access to free followers\n"
+            f"> {EMOJI_TICK} You must stay online\n"
+            f"> {EMOJI_TICK} Role is automatic\n\n"
+            f"## {EMOJI_STAR} Perks\n\n"
+            f"> {EMOJI_GLOBAL} Free followers\n"
             f"> {EMOJI_MONEY} Save money\n"
-            f"> {EMOJI_COMPUTER} Instant automated access\n"
-            f"> {EMOJI_DISCORD} Fully integrated system\n"
-            f"> {EMOJI_CHARIZARD} Exclusive free user perks\n\n"
-            f"{EMOJI_WAVES} Enjoy your free access with Notix."
+            f"> {EMOJI_COMPUTER} Instant access\n"
+            f"> {EMOJI_DISCORD} Automated system\n"
+            f"> {EMOJI_CHARIZARD} Exclusive perks\n\n"
+            f"{EMOJI_WAVES} Enjoy Notix free access."
         ),
         color=EMBED_COLOR
     )
