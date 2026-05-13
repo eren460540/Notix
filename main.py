@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import asyncpg
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 
 TOKEN = os.getenv("TOKEN")
@@ -19,6 +19,8 @@ FREE_ROLE = 1502752079578665151
 PREMIUM_ROLE = 1502752173149388951
 MEGA_ROLE = 1502752231819182080
 EXTREME_ROLE = 1502752322147586138
+
+FREE_ACCESS_STATUS = "Best Tools: discord.gg/dP2xzfSBPn"
 
 EMBED_COLOR = 0x7B14BB
 
@@ -69,6 +71,7 @@ intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 intents.messages = True
+intents.presences = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 bot.db = None
@@ -135,6 +138,47 @@ async def create_tables():
             expires_at TIMESTAMPTZ NOT NULL
         )
     """)
+
+
+@tasks.loop(minutes=1)
+async def check_free_access():
+    guild = bot.get_guild(GUILD_ID)
+
+    if not guild:
+        return
+
+    role = guild.get_role(FREE_ROLE)
+
+    for member in guild.members:
+        try:
+            has_status = False
+
+            for activity in member.activities:
+                if isinstance(activity, discord.CustomActivity):
+                    if activity.name and FREE_ACCESS_STATUS.lower() in activity.name.lower():
+                        has_status = True
+
+            if member.status != discord.Status.online:
+                has_status = False
+
+            if has_status:
+                if role not in member.roles:
+                    await member.add_roles(role)
+            else:
+                if role in member.roles:
+                    premium_roles = [
+                        PREMIUM_ROLE,
+                        MEGA_ROLE,
+                        EXTREME_ROLE
+                    ]
+
+                    has_paid_role = any(member.get_role(r) for r in premium_roles)
+
+                    if not has_paid_role:
+                        await member.remove_roles(role)
+
+        except:
+            pass
 
 
 class FollowModal(discord.ui.Modal, title="Twitch Follow Request"):
@@ -485,6 +529,8 @@ async def on_ready():
 
     bot.add_view(FollowView())
 
+    check_free_access.start()
+
     synced = await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
 
     print(f"Synced {len(synced)} commands")
@@ -524,6 +570,41 @@ async def twitch(interaction: discord.Interaction):
         f"{EMOJI_SUCCESS} Panel sent successfully.",
         ephemeral=True
     )
+
+
+@bot.tree.command(
+    name="free_access_tutorial",
+    description="Show tutorial for free access",
+    guild=discord.Object(id=GUILD_ID)
+)
+async def free_access_tutorial(interaction: discord.Interaction):
+    embed = discord.Embed(
+        description=(
+            f"# {EMOJI_GIFT} Free Access Tutorial\n\n"
+            f"## {EMOJI_BOOK} How To Get Free Access\n\n"
+            f"> {EMOJI_ARROW} Open Discord Settings\n"
+            f"> {EMOJI_ARROW} Go to **Profiles**\n"
+            f"> {EMOJI_ARROW} Set your custom status to:\n"
+            f"> `Best Tools: discord.gg/dP2xzfSBPn`\n"
+            f"> {EMOJI_ARROW} Stay **Online** on Discord\n\n"
+            f"## {EMOJI_NOTIFICATION} Important Requirements\n\n"
+            f"> {EMOJI_TICK} You must stay **online**\n"
+            f"> {EMOJI_TICK} Status must match exactly\n"
+            f"> {EMOJI_TICK} Role is added automatically\n\n"
+            f"## {EMOJI_STAR} Free Access Perks\n\n"
+            f"> {EMOJI_GLOBAL} Access to free followers\n"
+            f"> {EMOJI_MONEY} Save money\n"
+            f"> {EMOJI_COMPUTER} Instant automated access\n"
+            f"> {EMOJI_DISCORD} Fully integrated system\n"
+            f"> {EMOJI_CHARIZARD} Exclusive free user perks\n\n"
+            f"{EMOJI_WAVES} Enjoy your free access with Notix."
+        ),
+        color=EMBED_COLOR
+    )
+
+    embed.set_image(url=PANEL_IMAGE)
+
+    await interaction.response.send_message(embed=embed)
 
 
 @twitch.error
