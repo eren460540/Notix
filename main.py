@@ -54,7 +54,6 @@ intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 intents.messages = True
-intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 bot.db = None
@@ -181,13 +180,10 @@ class FollowModal(discord.ui.Modal, title="Twitch Follow Request"):
             member.id
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
 
         if cooldown_data:
             expires_at = cooldown_data["expires_at"]
-
-            if expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=timezone.utc)
 
             if expires_at > now:
                 remaining = int((expires_at - now).total_seconds())
@@ -329,7 +325,7 @@ class StaffView(discord.ui.View):
     async def complete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await bot.db.execute(
             "UPDATE orders SET status = 'Completed', completed_at = $1 WHERE order_id = $2",
-            datetime.now(timezone.utc),
+            datetime.utcnow(),
             self.order_id
         )
 
