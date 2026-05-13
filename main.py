@@ -54,6 +54,7 @@ intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 intents.messages = True
+intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 bot.db = None
@@ -117,7 +118,7 @@ async def create_tables():
     await bot.db.execute("""
         CREATE TABLE IF NOT EXISTS cooldowns (
             user_id BIGINT PRIMARY KEY,
-            expires_at TIMESTAMPZ NOT NULL
+            expires_at TIMESTAMPTZ NOT NULL
         )
     """)
 
@@ -183,7 +184,10 @@ class FollowModal(discord.ui.Modal, title="Twitch Follow Request"):
         now = datetime.now(timezone.utc)
 
         if cooldown_data:
-            expires_at = cooldown_data["expires_at"].replace(tzinfo=timezone.utc)
+            expires_at = cooldown_data["expires_at"]
+
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
 
             if expires_at > now:
                 remaining = int((expires_at - now).total_seconds())
