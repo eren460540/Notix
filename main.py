@@ -109,15 +109,15 @@ async def create_tables():
             followers INTEGER NOT NULL,
             status TEXT NOT NULL,
             claimed_by BIGINT,
-            created_at TIMESTAMP NOT NULL,
-            completed_at TIMESTAMP
+            created_at TIMESTAMPTZ NOT NULL,
+            completed_at TIMESTAMPTZ
         )
     """)
 
     await bot.db.execute("""
         CREATE TABLE IF NOT EXISTS cooldowns (
             user_id BIGINT PRIMARY KEY,
-            expires_at TIMESTAMP NOT NULL
+            expires_at TIMESTAMPZ NOT NULL
         )
     """)
 
